@@ -208,8 +208,10 @@ program
       const marker = isActive ? `${c.green}* ` : '  ';
       const status = hasKey ? `${c.green}[key]${c.reset}` : `${c.red}[no key]${c.reset}`;
       const email = p.email ? `${c.cyan}${p.email}${c.reset}` : `${c.dim}(no email)${c.reset}`;
+      const group = getProfileGroup(name);
+      const groupTag = group ? ` ${c.magenta}[${group}]${c.reset}` : '';
 
-      console.log(`${marker}${c.bold}${name}${c.reset}  ${email}  ${status}`);
+      console.log(`${marker}${c.bold}${name}${c.reset}  ${email}  ${status}${groupTag}`);
 
       if (p.lastUsed) {
         const ago = timeSince(new Date(p.lastUsed));
@@ -427,6 +429,20 @@ program
       }
     }
 
+    // Show groups if in mixed mode
+    if (mode === 'mixed') {
+      const groups = getGroups();
+      const groupNames = Object.keys(groups);
+      if (groupNames.length > 0) {
+        console.log('');
+        console.log(`${c.bold}  Groups:${c.reset}`);
+        for (const g of groupNames) {
+          const members = groups[g].members || [];
+          console.log(`    ${c.magenta}${g}${c.reset}: ${members.join(', ') || '(empty)'}`);
+        }
+      }
+    }
+
     // Show env var state
     console.log('');
     console.log(`${c.dim}Environment:${c.reset}`);
@@ -487,10 +503,13 @@ groupCmd
   .command('add <group> <profile>')
   .description('Add a profile to a group')
   .action(async (group, profile) => {
-    addToGroup(group, profile);
+    const added = addToGroup(group, profile);
+    if (!added) {
+      console.log(`${c.yellow}"${profile}" is already in group "${group}".${c.reset}`);
+      return;
+    }
     console.log(`${c.green}Added "${profile}" to group "${group}".${c.reset}`);
 
-    // Show the group
     const groups = getGroups();
     const members = groups[group]?.members || [];
     console.log(`${c.dim}Group "${group}": ${members.join(', ')}${c.reset}`);
@@ -547,6 +566,17 @@ function timeSince(date) {
 }
 
 // ── Parse ──
+
+// Global error handler — clean messages instead of stack traces
+process.on('uncaughtException', (err) => {
+  console.error(`${c.red}${err.message}${c.reset}`);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (err) => {
+  console.error(`${c.red}${err.message || err}${c.reset}`);
+  process.exit(1);
+});
 
 if (process.argv.length <= 2) {
   program.help();
