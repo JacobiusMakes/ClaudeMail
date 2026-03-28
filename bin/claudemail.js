@@ -23,7 +23,7 @@ import { setToken, getToken, deleteToken, hasToken, getClaudeToken } from '../li
 import {
   loadProfiles, saveProfiles, addProfile, removeProfile,
   getActive, setActive, getConfigDir, getActiveShellPath,
-  validateProfileName, PROFILES_DIR,
+  validateProfileName, getMode, setMode, PROFILES_DIR,
 } from '../lib/profiles.js';
 
 // ============================================================
@@ -59,8 +59,36 @@ program
   .description('Add a new profile — triggers Claude login and captures the token')
   .option('-e, --email <email>', 'Email address for this profile')
   .action(async (name, opts) => {
+    // Validate profile name
+    validateProfileName(name);
+
+    // First-run: ask about mode if not set yet
+    const data = loadProfiles();
+    if (!data.mode) {
+      const rl0 = readline.createInterface({ input: process.stdin, output: process.stdout });
+      console.log(`${c.bold}First time setup — how should your profiles work?${c.reset}\n`);
+      console.log(`  1) ${c.bold}Isolated${c.reset}  — Separate sessions per account.`);
+      console.log(`     ${c.dim}Work stays work, personal stays personal.${c.reset}`);
+      console.log(`     ${c.dim}Switching profiles = clean context.${c.reset}\n`);
+      console.log(`  2) ${c.bold}Unified${c.reset}   — Shared session, different accounts.`);
+      console.log(`     ${c.dim}Claude keeps context across all profiles.${c.reset}`);
+      console.log(`     ${c.dim}"Check both inboxes" works in one conversation.${c.reset}\n`);
+
+      const modeChoice = await new Promise((resolve) => {
+        rl0.question(`${c.dim}Enter 1 or 2 [default: 1]: ${c.reset}`, (ans) => {
+          resolve(ans.trim() || '1');
+        });
+      });
+      rl0.close();
+
+      const mode = modeChoice === '2' ? 'unified' : 'isolated';
+      setMode(mode);
+      console.log(`${c.green}Mode set to: ${c.bold}${mode}${c.reset}`);
+      console.log(`${c.dim}Change anytime with: claudemail mode <isolated|unified>${c.reset}\n`);
+    }
+
     const configDir = getConfigDir(name);
-    mkdirSync(configDir, { recursive: true });
+    mkdirSync(configDir, { recursive: true, mode: 0o700 });
 
     console.log(`${c.bold}Adding profile: ${c.cyan}${name}${c.reset}`);
     if (opts.email) {
@@ -351,8 +379,10 @@ program
     const active = data.active;
     const profileCount = Object.keys(data.profiles).length;
 
+    const mode = getMode();
     console.log(`${c.bold}claudemail status${c.reset}\n`);
     console.log(`  Profiles: ${profileCount}`);
+    console.log(`  Mode:     ${c.cyan}${mode}${c.reset}`);
     console.log(`  Active:   ${active ? `${c.green}${active}${c.reset}` : `${c.dim}none${c.reset}`}`);
 
     if (active && data.profiles[active]) {
@@ -392,6 +422,37 @@ program
     console.log(`${c.dim}Environment:${c.reset}`);
     console.log(`  CLAUDE_CODE_OAUTH_TOKEN: ${process.env.CLAUDE_CODE_OAUTH_TOKEN ? `${c.green}set${c.reset}` : `${c.dim}not set${c.reset}`}`);
     console.log(`  CLAUDE_CONFIG_DIR:       ${process.env.CLAUDE_CONFIG_DIR || `${c.dim}default (~/.claude)${c.reset}`}`);
+  });
+
+// ── mode ──
+
+program
+  .command('mode [value]')
+  .description('View or change profile mode (isolated / unified)')
+  .action(async (value) => {
+    if (!value) {
+      const current = getMode();
+      console.log(`${c.bold}Current mode: ${c.cyan}${current}${c.reset}\n`);
+      console.log(`  ${c.bold}isolated${c.reset}  — Separate sessions per account. Switching = clean context.`);
+      console.log(`  ${c.bold}unified${c.reset}   — Shared session. Claude sees everything across accounts.\n`);
+      console.log(`${c.dim}Change with: claudemail mode isolated${c.reset}`);
+      console.log(`${c.dim}         or: claudemail mode unified${c.reset}`);
+      return;
+    }
+
+    if (value !== 'isolated' && value !== 'unified') {
+      console.error(`${c.red}Invalid mode "${value}". Use "isolated" or "unified".${c.reset}`);
+      process.exit(1);
+    }
+
+    setMode(value);
+    console.log(`${c.green}Mode changed to: ${c.bold}${value}${c.reset}`);
+
+    if (value === 'unified') {
+      console.log(`${c.dim}All profiles will now share one session context.${c.reset}`);
+    } else {
+      console.log(`${c.dim}Each profile now gets its own isolated session.${c.reset}`);
+    }
   });
 
 // ── Helper ──
