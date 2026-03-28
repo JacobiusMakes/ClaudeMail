@@ -1,0 +1,16 @@
+{
+  "name": "claudemail",
+  "version": "0.1.0",
+  "description": "Multi-account profile manager for Claude Code — switch between email accounts seamlessly",
+  "type": "module",
+  "bin": {
+    "claudemail": "bin/claudemail.js"
+  },
+  "scripts": {
+    "start": "node bin/claudemail.js"
+  },
+  "dependencies": {
+    "commander": "^12.0.0"
+  },
+  "license": "MIT"
+}
