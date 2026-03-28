@@ -23,7 +23,9 @@ import { setToken, getToken, deleteToken, hasToken, getClaudeToken } from '../li
 import {
   loadProfiles, saveProfiles, addProfile, removeProfile,
   getActive, setActive, getConfigDir, getActiveShellPath,
-  validateProfileName, getMode, setMode, PROFILES_DIR,
+  validateProfileName, getMode, setMode,
+  createGroup, addToGroup, removeFromGroup, deleteGroup,
+  getGroups, getProfileGroup, PROFILES_DIR,
 } from '../lib/profiles.js';
 
 // ============================================================
@@ -73,18 +75,26 @@ program
       console.log(`  2) ${c.bold}Unified${c.reset}   — Shared session, different accounts.`);
       console.log(`     ${c.dim}Claude keeps context across all profiles.${c.reset}`);
       console.log(`     ${c.dim}"Check both inboxes" works in one conversation.${c.reset}\n`);
+      console.log(`  3) ${c.bold}Mixed${c.reset}     — Aggregate email groups.`);
+      console.log(`     ${c.dim}Group profiles into custom clusters (e.g. "dev" = work + GitHub).${c.reset}`);
+      console.log(`     ${c.dim}Profiles in the same group share context. Groups stay separate.${c.reset}\n`);
 
       const modeChoice = await new Promise((resolve) => {
-        rl0.question(`${c.dim}Enter 1 or 2 [default: 1]: ${c.reset}`, (ans) => {
+        rl0.question(`${c.dim}Enter 1-3 [default: 1]: ${c.reset}`, (ans) => {
           resolve(ans.trim() || '1');
         });
       });
       rl0.close();
 
-      const mode = modeChoice === '2' ? 'unified' : 'isolated';
+      const modeMap = { '1': 'isolated', '2': 'unified', '3': 'mixed' };
+      const mode = modeMap[modeChoice] || 'isolated';
       setMode(mode);
       console.log(`${c.green}Mode set to: ${c.bold}${mode}${c.reset}`);
-      console.log(`${c.dim}Change anytime with: claudemail mode <isolated|unified>${c.reset}\n`);
+      if (mode === 'mixed') {
+        console.log(`${c.dim}Create groups with: claudemail group create <name>${c.reset}`);
+        console.log(`${c.dim}Add profiles to groups: claudemail group add <group> <profile>${c.reset}`);
+      }
+      console.log(`${c.dim}Change anytime with: claudemail mode <isolated|unified|mixed>${c.reset}\n`);
     }
 
     const configDir = getConfigDir(name);
@@ -428,20 +438,20 @@ program
 
 program
   .command('mode [value]')
-  .description('View or change profile mode (isolated / unified)')
+  .description('View or change profile mode (isolated / unified / mixed)')
   .action(async (value) => {
     if (!value) {
       const current = getMode();
       console.log(`${c.bold}Current mode: ${c.cyan}${current}${c.reset}\n`);
       console.log(`  ${c.bold}isolated${c.reset}  — Separate sessions per account. Switching = clean context.`);
-      console.log(`  ${c.bold}unified${c.reset}   — Shared session. Claude sees everything across accounts.\n`);
-      console.log(`${c.dim}Change with: claudemail mode isolated${c.reset}`);
-      console.log(`${c.dim}         or: claudemail mode unified${c.reset}`);
+      console.log(`  ${c.bold}unified${c.reset}   — Shared session. Claude sees everything across accounts.`);
+      console.log(`  ${c.bold}mixed${c.reset}     — Aggregate email groups. Profiles in a group share context.\n`);
+      console.log(`${c.dim}Change with: claudemail mode <isolated|unified|mixed>${c.reset}`);
       return;
     }
 
-    if (value !== 'isolated' && value !== 'unified') {
-      console.error(`${c.red}Invalid mode "${value}". Use "isolated" or "unified".${c.reset}`);
+    if (!['isolated', 'unified', 'mixed'].includes(value)) {
+      console.error(`${c.red}Invalid mode "${value}". Use "isolated", "unified", or "mixed".${c.reset}`);
       process.exit(1);
     }
 
@@ -450,9 +460,80 @@ program
 
     if (value === 'unified') {
       console.log(`${c.dim}All profiles will now share one session context.${c.reset}`);
+    } else if (value === 'mixed') {
+      console.log(`${c.dim}Profiles in the same group share context. Ungrouped profiles stay isolated.${c.reset}`);
+      console.log(`${c.dim}Manage groups: claudemail group create|add|remove|delete|list${c.reset}`);
     } else {
       console.log(`${c.dim}Each profile now gets its own isolated session.${c.reset}`);
     }
+  });
+
+// ── group ──
+
+const groupCmd = program
+  .command('group')
+  .description('Manage profile groups (for mixed mode)');
+
+groupCmd
+  .command('create <name>')
+  .description('Create a new group')
+  .action(async (name) => {
+    createGroup(name);
+    console.log(`${c.green}Group "${name}" created.${c.reset}`);
+    console.log(`${c.dim}Add profiles: claudemail group add ${name} <profile>${c.reset}`);
+  });
+
+groupCmd
+  .command('add <group> <profile>')
+  .description('Add a profile to a group')
+  .action(async (group, profile) => {
+    addToGroup(group, profile);
+    console.log(`${c.green}Added "${profile}" to group "${group}".${c.reset}`);
+
+    // Show the group
+    const groups = getGroups();
+    const members = groups[group]?.members || [];
+    console.log(`${c.dim}Group "${group}": ${members.join(', ')}${c.reset}`);
+    console.log(`${c.dim}These profiles now share session context in mixed mode.${c.reset}`);
+  });
+
+groupCmd
+  .command('remove <group> <profile>')
+  .description('Remove a profile from a group')
+  .action(async (group, profile) => {
+    removeFromGroup(group, profile);
+    console.log(`${c.green}Removed "${profile}" from group "${group}".${c.reset}`);
+  });
+
+groupCmd
+  .command('delete <name>')
+  .description('Delete a group (profiles are not affected)')
+  .action(async (name) => {
+    deleteGroup(name);
+    console.log(`${c.green}Group "${name}" deleted. Profiles remain intact.${c.reset}`);
+  });
+
+groupCmd
+  .command('list')
+  .description('List all groups and their members')
+  .action(async () => {
+    const groups = getGroups();
+    const names = Object.keys(groups);
+
+    if (names.length === 0) {
+      console.log(`${c.dim}No groups yet. Create one: claudemail group create <name>${c.reset}`);
+      return;
+    }
+
+    console.log(`${c.bold}Groups:${c.reset}\n`);
+    for (const name of names) {
+      const members = groups[name].members || [];
+      const memberList = members.length > 0
+        ? members.map(m => `${c.cyan}${m}${c.reset}`).join(', ')
+        : `${c.dim}(empty)${c.reset}`;
+      console.log(`  ${c.bold}${name}${c.reset}  ${memberList}`);
+    }
+    console.log(`\n${c.dim}Profiles in the same group share session context in mixed mode.${c.reset}`);
   });
 
 // ── Helper ──
