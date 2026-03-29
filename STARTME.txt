@@ -1,0 +1,16 @@
+claudemail — Multi-account profile manager for Claude Code — switch between email accounts seamlessly
+Stack: node, commander
+
+COMMANDS
+  start: node bin/claudemail.js
+
+ENTRY POINTS
+  claudemail → bin/claudemail.js
+
+STRUCTURE
+  README.md
+  bin/ (1 files)
+  lib/ (2 files)
+  package.json
+
+DEPS: 1 runtime, 0 dev
