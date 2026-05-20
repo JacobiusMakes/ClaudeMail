@@ -254,13 +254,23 @@ program
     mkdirSync(configDir, { recursive: true });
 
     const shellPath = getActiveShellPath();
-    // SECURITY: escape token for shell (single quotes prevent expansion)
-    const safeToken = token.replace(/'/g, "'\\''");
+    // Don't embed the token in the snippet — read it from the keychain
+    // each time the file is sourced. The snippet itself is then harmless
+    // if it leaks (just a profile name + a config path). `name` passed
+    // validateProfileName above, so it's safe to single-quote into the
+    // shell, but we quote everything anyway as defence in depth.
+    const safeName = name.replace(/'/g, "'\\''");
     const safeDir = configDir.replace(/'/g, "'\\''");
     const shellContent = [
       `# claudemail active profile: ${name}`,
       `# Generated: ${new Date().toISOString()}`,
-      `export CLAUDE_CODE_OAUTH_TOKEN='${safeToken}'`,
+      `# The token lives in the macOS keychain (service "claudemail",`,
+      `# account "${safeName}") and is fetched on each source.`,
+      `__claudemail_token=$(security find-generic-password -s claudemail -a '${safeName}' -w 2>/dev/null)`,
+      `if [ -n "$__claudemail_token" ]; then`,
+      `  export CLAUDE_CODE_OAUTH_TOKEN="$__claudemail_token"`,
+      `fi`,
+      `unset __claudemail_token`,
       `export CLAUDE_CONFIG_DIR='${safeDir}'`,
       '',
     ].join('\n');
