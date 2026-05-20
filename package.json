@@ -1,6 +1,6 @@
 {
   "name": "claudemail",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Multi-account profile manager for Claude Code — switch between email accounts seamlessly",
   "type": "module",
   "bin": {
